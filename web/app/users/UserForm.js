@@ -7,6 +7,7 @@ import { Button } from '../components/Button';
 import { Loading } from '../components/Loading';
 import {OUPicker} from '../components/OUPicker';
 import {ConfirmModal} from '../components/ConfirmModal';
+import { UserSshKeysSection } from '../ssh-keys/UserSshKeysSection';
 
 const INITIAL_FORM = {
   username: '',
@@ -425,6 +426,11 @@ export function UserForm() {
           onGroupsChange={setGroups}
           openAlert={openAlert}
         />
+      )}
+
+      {/* SSH Public Keys - only when editing */}
+      {isEditing && (
+        <UserSshKeysSection username={editUsername} openAlert={openAlert} />
       )}
     </div>
   );

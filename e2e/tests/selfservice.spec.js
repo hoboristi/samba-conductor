@@ -1,4 +1,4 @@
-const {runSuite, runTest, loginAsAdmin, waitForPageReady, BASE_URL} = require('./helpers');
+const {runSuite, runTest, loginAsAdmin, waitForPageReady, BASE_URL, LDAP_TIMEOUT, LDAP_ACTION_TIMEOUT} = require('./helpers');
 
 async function run(reporter) {
     await runSuite('selfservice', async (browser, reporter) => {
@@ -28,6 +28,23 @@ async function run(reporter) {
             await page.click('[data-e2e="selfservice-home-link-edit-profile"]');
             await page.waitForURL('**/profile**', {timeout: 10000});
             await page.waitForSelector('[data-e2e="profile-btn-save"]', {timeout: 10000});
+        });
+
+        await runTest(page, reporter, 'selfservice', 'add-own-ssh-key', async () => {
+            await page.waitForSelector('[data-e2e="profile-ssh-keys-textarea-key"]', {timeout: LDAP_TIMEOUT});
+            await page.fill(
+                '[data-e2e="profile-ssh-keys-textarea-key"]',
+                'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBJ8E2ESelfServiceKey00000000000000 e2e-self-test'
+            );
+            await page.fill('[data-e2e="profile-ssh-keys-input-label"]', 'e2e-own-laptop');
+            await page.click('[data-e2e="profile-ssh-keys-btn-add"]');
+            await page.waitForSelector('text=e2e-own-laptop', {timeout: LDAP_ACTION_TIMEOUT});
+        });
+
+        await runTest(page, reporter, 'selfservice', 'remove-own-ssh-key', async () => {
+            await page.waitForSelector('text=e2e-own-laptop', {timeout: LDAP_TIMEOUT});
+            await page.click('[data-e2e="profile-ssh-keys-btn-remove"]');
+            await page.waitForSelector('text=e2e-own-laptop', {state: 'hidden', timeout: LDAP_ACTION_TIMEOUT});
         });
 
         await runTest(page, reporter, 'selfservice', 'profile-cancel', async () => {

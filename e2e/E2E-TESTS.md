@@ -6,7 +6,7 @@ Comprehensive end-to-end test suite covering all features of the Samba Conductor
 
 | Suites | Tests | Runner               | Browser           |
 |--------|-------|----------------------|-------------------|
-| 15     | 65    | Node.js + Playwright | Chromium (Docker) |
+| 16     | 82    | Node.js + Playwright | Chromium (Docker) |
 
 ## Prerequisites
 
@@ -97,17 +97,19 @@ results/
 | stats-cards  | Stat cards (users, groups) render            |
 | status-links | DR key and sync account status links visible |
 
-### users (7 tests)
+### users (9 tests)
 
-| Test           | Description                                |
-|----------------|--------------------------------------------|
-| list-users     | Navigate to users page, table renders      |
-| create-user    | Fill form, submit, user created in AD      |
-| verify-created | Created user appears in list               |
-| edit-user      | Navigate to edit form, change fields, save |
-| toggle-disable | Disable user via confirm modal             |
-| toggle-enable  | Re-enable user via confirm modal           |
-| delete-user    | Delete user via confirm modal              |
+| Test           | Description                                        |
+|----------------|-----------------------------------------------------|
+| list-users     | Navigate to users page, table renders                |
+| create-user    | Fill form, submit, user created in AD                |
+| verify-created | Created user appears in list                         |
+| edit-user      | Navigate to edit form, change fields, save           |
+| add-ssh-key    | Add an SSH public key on the user's edit page        |
+| remove-ssh-key | Remove the SSH public key just added                 |
+| toggle-disable | Disable user via confirm modal                       |
+| toggle-enable  | Re-enable user via confirm modal                     |
+| delete-user    | Delete user via confirm modal                        |
 
 ### groups (5 tests)
 
@@ -131,7 +133,7 @@ results/
 ### computers (5 tests)
 
 | Test            | Description                               |
-|-----------------|-------------------------------------------|
+|-----------------|--------------------------------------------|
 | list-computers  | Navigate to computers page, table renders |
 | create-computer | Create computer via modal                 |
 | verify-created  | Created computer appears in list          |
@@ -161,23 +163,34 @@ results/
 ### gpos (4 tests)
 
 | Test           | Description                  |
-|----------------|------------------------------|
+|----------------|-------------------------------|
 | list-gpos      | Navigate to GPOs page        |
 | create-gpo     | Create GPO via modal         |
 | verify-created | Created GPO appears in list  |
 | delete-gpo     | Delete GPO via confirm modal |
 
+### sudo (6 tests)
+
+| Test            | Description                                          |
+|-----------------|-------------------------------------------------------|
+| list-rules      | Navigate to Sudo Rules page, table renders            |
+| create-rule     | Fill form, submit, sudoRole entry created in AD       |
+| verify-created  | Created rule appears in list                          |
+| edit-rule       | Navigate to edit form, change description, save       |
+| delete-rule     | Delete rule via confirm modal                          |
+| verify-deleted  | Deleted rule no longer appears in list                |
+
 ### domain (2 tests)
 
 | Test              | Description                       |
-|-------------------|-----------------------------------|
+|-------------------|------------------------------------|
 | info-section      | Domain info section renders       |
 | functional-levels | Functional levels section renders |
 
 ### oauth-clients (4 tests)
 
 | Test           | Description                             |
-|----------------|-----------------------------------------|
+|----------------|------------------------------------------|
 | list-clients   | Navigate to OAuth clients page          |
 | create-client  | Create client, verify credentials modal |
 | verify-in-list | Created client appears in list          |
@@ -186,36 +199,38 @@ results/
 ### oauth-realms (4 tests)
 
 | Test           | Description                    |
-|----------------|--------------------------------|
+|----------------|----------------------------------|
 | list-realms    | Navigate to OAuth realms page  |
 | default-exists | Default realm is present       |
-| create-realm   | Create new realm               |
+| create-realm   | Create new realm                |
 | delete-realm   | Delete realm via confirm modal |
 
 ### settings (4 tests)
 
 | Test                 | Description                         |
-|----------------------|-------------------------------------|
+|----------------------|--------------------------------------|
 | page-loads           | Navigate to settings page           |
 | toggle-feature       | Toggle a feature on/off             |
 | save-fields          | Save field configuration            |
 | sync-account-section | Sync account config section visible |
 
-### selfservice (6 tests)
+### selfservice (8 tests)
 
-| Test                   | Description                                    |
-|------------------------|------------------------------------------------|
-| home-page              | Self-service home renders                      |
-| home-links             | Edit profile and change password links present |
-| profile-page           | Navigate to profile page                       |
-| profile-cancel         | Cancel returns to home                         |
-| change-password-page   | Navigate to change password page               |
-| change-password-cancel | Cancel returns to home                         |
+| Test                   | Description                                     |
+|------------------------|---------------------------------------------------|
+| home-page              | Self-service home renders                         |
+| home-links             | Edit profile and change password links present    |
+| profile-page           | Navigate to profile page                          |
+| add-own-ssh-key        | Add an SSH public key from the Profile page        |
+| remove-own-ssh-key     | Remove the SSH public key just added               |
+| profile-cancel         | Cancel returns to home                            |
+| change-password-page   | Navigate to change password page                  |
+| change-password-cancel | Cancel returns to home                            |
 
 ### dr (3 tests)
 
 | Test              | Description                        |
-|-------------------|------------------------------------|
+|-------------------|--------------------------------------|
 | page-loads        | Navigate to disaster recovery page |
 | key-section       | DR key management section visible  |
 | s3-config-visible | S3 configuration section check     |

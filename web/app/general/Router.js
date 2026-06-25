@@ -28,6 +28,7 @@ import { Settings } from '../settings/Settings';
 import { DrPage } from '../dr/DrPage';
 import {OAuthClients} from '../oauth/OAuthClients';
 import {OAuthRealms} from '../oauth/OAuthRealms';
+import { SudoRules } from '../sudo/SudoRules';
 
 // Layouts
 import { AnonymousLayout } from '../layouts/AnonymousLayout';
@@ -139,6 +140,10 @@ export function Router() {
         <Route
             path={RoutePaths.ADMIN_OAUTH_REALMS}
             element={<AdminPage><OAuthRealms/></AdminPage>}
+        />
+        <Route
+            path={RoutePaths.ADMIN_SUDO}
+            element={<AdminPage><SudoRules/></AdminPage>}
         />
       <Route
         path={RoutePaths.ADMIN_SETTINGS}

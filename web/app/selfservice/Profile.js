@@ -5,6 +5,7 @@ import { useAlert } from 'meteor/quave:alert-react-tailwind';
 import { RoutePaths } from '../general/RoutePaths';
 import { Button } from '../components/Button';
 import { Loading } from '../components/Loading';
+import { OwnSshKeysSection } from '../ssh-keys/OwnSshKeysSection';
 
 export function Profile() {
   const navigate = useNavigate();
@@ -120,6 +121,10 @@ export function Profile() {
           </Button>
         </div>
       </form>
+
+      <div className="mt-8">
+        <OwnSshKeysSection openAlert={openAlert} />
+      </div>
     </div>
   );
 }

@@ -47,6 +47,24 @@ async function run(reporter) {
             await page.waitForURL('**/admin/users', {timeout: LDAP_ACTION_TIMEOUT});
         });
 
+        await runTest(page, reporter, 'users', 'add-ssh-key', async () => {
+            await page.goto(`${BASE_URL}/admin/users/${TEST_USER}/edit`);
+            await page.waitForSelector('[data-e2e="user-ssh-keys-textarea-key"]', {timeout: LDAP_TIMEOUT});
+            await page.fill(
+                '[data-e2e="user-ssh-keys-textarea-key"]',
+                'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBJ8E2ETestKeyPlaceholder0000000000000 e2e-test'
+            );
+            await page.fill('[data-e2e="user-ssh-keys-input-label"]', 'e2e-laptop');
+            await page.click('[data-e2e="user-ssh-keys-btn-add"]');
+            await page.waitForSelector('text=e2e-laptop', {timeout: LDAP_ACTION_TIMEOUT});
+        });
+
+        await runTest(page, reporter, 'users', 'remove-ssh-key', async () => {
+            await page.waitForSelector('text=e2e-laptop', {timeout: LDAP_TIMEOUT});
+            await page.click('[data-e2e="user-ssh-keys-btn-remove"]');
+            await page.waitForSelector('text=e2e-laptop', {state: 'hidden', timeout: LDAP_ACTION_TIMEOUT});
+        });
+
         await runTest(page, reporter, 'users', 'toggle-disable', async () => {
             await page.goto(`${BASE_URL}/admin/users`);
             await page.waitForSelector(TABLE_SELECTOR, {timeout: LDAP_TIMEOUT});

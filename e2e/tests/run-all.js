@@ -10,6 +10,7 @@ const SUITES = {
     'service-accounts': () => require('./service-accounts.spec'),
     dns: () => require('./dns.spec'),
     gpos: () => require('./gpos.spec'),
+    sudo: () => require('./sudo.spec'),
     domain: () => require('./domain.spec'),
     'oauth-clients': () => require('./oauth-clients.spec'),
     'oauth-realms': () => require('./oauth-realms.spec'),

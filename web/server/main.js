@@ -14,6 +14,8 @@ import '../app/serviceaccounts/serviceAccountsMethods';
 import '../app/dns/dnsMethods';
 import '../app/gpo/gpoMethods';
 import '../app/domain/domainMethods';
+import '../app/sudo/sudoMethods';
+import '../app/ssh-keys/sshKeysMethods';
 
 // Self-service methods
 import '../app/selfservice/selfServiceMethods';

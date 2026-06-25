@@ -23,6 +23,7 @@ export const RoutePaths = {
   ADMIN_DOMAIN: '/admin/domain',
     ADMIN_OAUTH_CLIENTS: '/admin/oauth/clients',
     ADMIN_OAUTH_REALMS: '/admin/oauth/realms',
+  ADMIN_SUDO: '/admin/sudo',
   ADMIN_SETTINGS: '/admin/settings',
   ADMIN_DR: '/admin/dr',
 };

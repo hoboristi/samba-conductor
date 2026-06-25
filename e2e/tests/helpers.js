@@ -47,6 +47,7 @@ async function navigateToAdmin(page, section) {
         'service-accts': '**/admin/service-accounts**',
         'dns': '**/admin/dns**',
         'gpos': '**/admin/gpos**',
+        'sudo-rules': '**/admin/sudo**',
         'domain': '**/admin/domain**',
         'clients': '**/admin/oauth/clients**',
         'realms': '**/admin/oauth/realms**',

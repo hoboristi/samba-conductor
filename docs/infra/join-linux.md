@@ -114,6 +114,83 @@ Restart SSSD:
 sudo systemctl restart sssd
 ```
 
+### Step 6a: Enable SSH Public Key Login (Optional)
+
+Samba Conductor lets users register SSH public keys against their AD account (**Admin → Users → Edit**, or
+**Profile** for self-service). To let this host authenticate against those keys instead of, or in addition to,
+passwords:
+
+Add to the `[domain/samdom.example.com]` section of `/etc/sssd/sssd.conf`:
+
+```ini
+ldap_user_extra_attrs    = altSecurityIdentities:altSecurityIdentities
+ldap_user_ssh_public_key = altSecurityIdentities
+```
+
+Add to `/etc/ssh/sshd_config`:
+
+```
+AuthorizedKeysCommand     /usr/bin/sss_ssh_authorizedkeys %u
+AuthorizedKeysCommandUser nobody
+```
+
+Restart both services:
+
+```bash
+sudo systemctl restart sssd sshd
+```
+
+Test it:
+
+```bash
+sss_ssh_authorizedkeys someuser
+# Should print that user's registered public key(s)
+```
+
+> Keys are stored with an `SSHKey:` prefix inside `altSecurityIdentities`, so this won't conflict with other uses
+> of that attribute (e.g. certificate mappings).
+
+### Step 6b: Enable Centralized Sudo Rules (Optional)
+
+Sudo rules created in **Admin → Sudo Rules** live under `ou=sudoers` in AD. To have this host honor them:
+
+Add to the `[domain/samdom.example.com]` section of `/etc/sssd/sssd.conf`:
+
+```ini
+sudo_provider         = ldap
+ldap_sudo_search_base = ou=sudoers,dc=samdom,dc=example,dc=com
+
+# Optional caching tuneables
+ldap_sudo_full_refresh_interval  = 21600   # 6 hours
+ldap_sudo_smart_refresh_interval = 900     # 15 minutes
+```
+
+Ensure `/etc/nsswitch.conf` includes:
+
+```
+sudoers: files sss
+```
+
+Restart SSSD:
+
+```bash
+sudo systemctl restart sssd
+```
+
+Test it:
+
+```bash
+sudo -l -U someuser
+```
+
+This should list the rules that apply to `someuser`, combining any local `/etc/sudoers` entries with the AD-sourced
+ones.
+
+> The `ou=sudoers` container and the `sudoRole` schema it depends on are created automatically when a Samba
+> Conductor-provisioned DC is first set up. If you're attaching this to a pre-existing DC that wasn't provisioned by
+> this project, see the schema-loading steps in
+> [Sudo & SSH Key Integration](sudo-ssh-integration.md).
+
 ### Step 7: Enable Home Directory Creation
 
 ```bash
@@ -184,6 +261,9 @@ wbinfo -u   # List domain users
 wbinfo -g   # List domain groups
 ```
 
+> SSH public-key login and centralized sudo rules (Steps 6a/6b above) are SSSD-specific features. Winbind-joined
+> hosts will need to use local `authorized_keys` files and `/etc/sudoers` instead.
+
 ## Verification in Samba Conductor
 
 After joining, the computer should appear in:
@@ -218,6 +298,19 @@ sudo net ads leave -U Administrator
 - Check SSSD is running: `sudo systemctl status sssd`
 - Check logs: `sudo journalctl -u sssd`
 - Verify: `id username@samdom.example.com`
+
+### `sss_ssh_authorizedkeys` prints nothing
+
+- Confirm the user actually has a key registered in Samba Conductor (**Profile** or **Admin → Users → Edit**).
+- Confirm `ldap_user_ssh_public_key = altSecurityIdentities` is set and SSSD was restarted.
+- Clear the SSSD cache for that user and retry: `sudo sss_cache -u username`
+
+### `sudo -l` doesn't show AD-sourced rules
+
+- Confirm `sudoers: files sss` is in `/etc/nsswitch.conf`.
+- Confirm `ldap_sudo_search_base` matches your actual domain base DN.
+- Confirm the `ou=sudoers` container exists and has at least one `sudoRole` entry (check in **Admin → Sudo Rules**).
+- Clear the SSSD sudo cache: `sudo sss_cache -u username` then retry.
 
 ### Time Sync
 
