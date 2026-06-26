@@ -11,6 +11,13 @@
 #   SAMBA_JOIN_AS_DC=true     — join an existing domain as replica DC
 #   SAMBA_PRIMARY_DC=hostname — primary DC to replicate from
 #   SAMBA_SITE=site_name      — AD site name (optional)
+#
+# Note: sudoRole schema setup is NOT done here. It requires the samba daemon
+# to be live and listening on LDAP, which is not yet true at the point this
+# script runs (entrypoint.sh calls setup_samba() *before* supervisord starts
+# the samba process). It instead runs as its own one-shot supervisor program —
+# see docker/scripts/setup-sudo-schema.sh — which polls for samba to come up
+# before doing any schema work.
 # =============================================================================
 
 SAMBA_DATA="${DATA_DIR}/samba"
@@ -19,7 +26,6 @@ SAMBA_LOGS="${DATA_DIR}/logs/samba"
 TLS_DIR="${SAMBA_DATA}/private/tls"
 SAMBA_PROVISIONED="${SAMBA_DATA}/.provisioned"
 SAMBA_JOINED="${SAMBA_DATA}/.joined"
-SUDO_SCHEMA_LOADED="${SAMBA_DATA}/.sudo-schema-loaded"
 
 # -----------------------------------------------------------------------------
 # Create directory structure and symlink standard paths to /data
@@ -255,175 +261,6 @@ setup_tls() {
 }
 
 # -----------------------------------------------------------------------------
-# Extend the AD schema with the sudoRole objectClass and create ou=sudoers.
-# This enables storing sudo rules in AD for consumption by sssd's
-# sudo_provider = ldap on domain-joined Linux hosts.
-#
-# Only runs on the primary/provisioning DC — replica DCs inherit the schema
-# via normal AD replication, so this is skipped when SAMBA_JOIN_AS_DC=true.
-# Idempotent: guarded by SUDO_SCHEMA_LOADED marker file.
-# -----------------------------------------------------------------------------
-setup_sudo_schema() {
-    if [ -f "$SUDO_SCHEMA_LOADED" ]; then
-        echo "[Samba] sudoRole schema already loaded."
-        return
-    fi
-
-    if [ "${SAMBA_JOIN_AS_DC}" = "true" ]; then
-        echo "[Samba] Replica DC — sudoRole schema will arrive via replication. Skipping."
-        return
-    fi
-
-    if ! samba-tool domain info 127.0.0.1 >/dev/null 2>&1; then
-        echo "[Samba] WARNING: Samba is not responding yet — skipping sudoRole schema setup."
-        echo "         It will be retried on next container start."
-        return
-    fi
-
-    local domain_base
-    domain_base=$(echo "${SAMBA_REALM}" | tr '[:upper:]' '[:lower:]' | awk -F'.' '{
-        for (i=1; i<=NF; i++) printf "dc=%s%s", $i, (i<NF ? "," : "")
-    }')
-
-    echo "[Samba] Loading sudoRole schema into ${domain_base}..."
-
-    local schema_ldif
-    schema_ldif=$(mktemp /tmp/sudo-schema-XXXXXX.ldif)
-
-    cat > "$schema_ldif" <<EOF
-dn: CN=sudoUser,CN=Schema,CN=Configuration,${domain_base}
-changetype: add
-objectClass: top
-objectClass: attributeSchema
-cn: sudoUser
-attributeID: 1.3.6.1.4.1.15953.9.1.1
-attributeSyntax: 2.5.5.5
-isSingleValued: FALSE
-adminDisplayName: sudoUser
-adminDescription: User(s) who may run sudo
-oMSyntax: 22
-searchFlags: 1
-
-dn: CN=sudoHost,CN=Schema,CN=Configuration,${domain_base}
-changetype: add
-objectClass: top
-objectClass: attributeSchema
-cn: sudoHost
-attributeID: 1.3.6.1.4.1.15953.9.1.2
-attributeSyntax: 2.5.5.5
-isSingleValued: FALSE
-adminDisplayName: sudoHost
-adminDescription: Host(s) on which sudo is allowed
-oMSyntax: 22
-searchFlags: 1
-
-dn: CN=sudoCommand,CN=Schema,CN=Configuration,${domain_base}
-changetype: add
-objectClass: top
-objectClass: attributeSchema
-cn: sudoCommand
-attributeID: 1.3.6.1.4.1.15953.9.1.3
-attributeSyntax: 2.5.5.5
-isSingleValued: FALSE
-adminDisplayName: sudoCommand
-adminDescription: Command(s) allowed or denied by sudo
-oMSyntax: 22
-searchFlags: 0
-
-dn: CN=sudoOption,CN=Schema,CN=Configuration,${domain_base}
-changetype: add
-objectClass: top
-objectClass: attributeSchema
-cn: sudoOption
-attributeID: 1.3.6.1.4.1.15953.9.1.5
-attributeSyntax: 2.5.5.5
-isSingleValued: FALSE
-adminDisplayName: sudoOption
-adminDescription: Options for sudo
-oMSyntax: 22
-searchFlags: 0
-
-dn: CN=sudoRunAsUser,CN=Schema,CN=Configuration,${domain_base}
-changetype: add
-objectClass: top
-objectClass: attributeSchema
-cn: sudoRunAsUser
-attributeID: 1.3.6.1.4.1.15953.9.1.6
-attributeSyntax: 2.5.5.5
-isSingleValued: FALSE
-adminDisplayName: sudoRunAsUser
-adminDescription: User(s) impersonated by sudo
-oMSyntax: 22
-searchFlags: 0
-
-dn: CN=sudoRunAsGroup,CN=Schema,CN=Configuration,${domain_base}
-changetype: add
-objectClass: top
-objectClass: attributeSchema
-cn: sudoRunAsGroup
-attributeID: 1.3.6.1.4.1.15953.9.1.7
-attributeSyntax: 2.5.5.5
-isSingleValued: FALSE
-adminDisplayName: sudoRunAsGroup
-adminDescription: Group(s) impersonated by sudo
-oMSyntax: 22
-searchFlags: 0
-
-dn: CN=sudoRole,CN=Schema,CN=Configuration,${domain_base}
-changetype: add
-objectClass: top
-objectClass: classSchema
-cn: sudoRole
-governsID: 1.3.6.1.4.1.15953.9.2.1
-rDNAttID: cn
-adminDisplayName: sudoRole
-adminDescription: Sudoer Entries
-objectClassCategory: 1
-lDAPDisplayName: sudoRole
-name: sudoRole
-systemOnly: FALSE
-systemPossSuperiors: container
-systemPossSuperiors: organizationalUnit
-systemPossSuperiors: domain
-mayContain: sudoCommand
-mayContain: sudoHost
-mayContain: sudoOption
-mayContain: sudoRunAsUser
-mayContain: sudoRunAsGroup
-mayContain: sudoUser
-mustContain: cn
-EOF
-
-    if samba-tool ldif-import "$schema_ldif" \
-        --option="dsdb:schema update allowed = true" \
-        >> "${SAMBA_LOGS}/sudo-schema-setup.log" 2>&1; then
-        echo "[Samba] sudoRole schema loaded successfully."
-    else
-        echo "[Samba] WARNING: sudoRole schema import reported errors — check ${SAMBA_LOGS}/sudo-schema-setup.log"
-        echo "         (this is often harmless if the schema was already partially present)"
-    fi
-
-    rm -f "$schema_ldif"
-
-    # Create the ou=sudoers container, ignoring failure if it already exists
-    local ou_ldif
-    ou_ldif=$(mktemp /tmp/sudo-ou-XXXXXX.ldif)
-    cat > "$ou_ldif" <<EOF
-dn: ou=sudoers,${domain_base}
-changetype: add
-objectClass: top
-objectClass: organizationalUnit
-ou: sudoers
-description: Sudo rules for domain-joined Linux hosts
-EOF
-    samba-tool ldif-import "$ou_ldif" >> "${SAMBA_LOGS}/sudo-schema-setup.log" 2>&1 || true
-    rm -f "$ou_ldif"
-
-    touch "$SUDO_SCHEMA_LOADED"
-    echo "[Samba] ou=sudoers ready."
-}
-
-# -----------------------------------------------------------------------------
 # Run full Samba setup
 # -----------------------------------------------------------------------------
 setup_samba() {
@@ -437,5 +274,4 @@ setup_samba() {
 
     setup_kerberos
     setup_tls
-    setup_sudo_schema
 }

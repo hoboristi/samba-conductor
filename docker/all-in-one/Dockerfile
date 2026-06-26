@@ -67,7 +67,8 @@ RUN useradd -r -s /sbin/nologin -d /opt/app conductor
 
 # Shared samba scripts
 COPY docker/scripts/samba-setup.sh /usr/local/lib/samba-setup.sh
-RUN chmod +x /usr/local/lib/samba-setup.sh
+COPY docker/scripts/setup-sudo-schema.sh /usr/local/lib/setup-sudo-schema.sh
+RUN chmod +x /usr/local/lib/samba-setup.sh /usr/local/lib/setup-sudo-schema.sh
 
 # Image-specific files
 COPY docker/all-in-one/entrypoint.sh /usr/local/bin/entrypoint.sh

@@ -40,7 +40,8 @@ EXPOSE 49152-65535/tcp
 
 # Shared samba scripts
 COPY scripts/samba-setup.sh /usr/local/lib/samba-setup.sh
-RUN chmod +x /usr/local/lib/samba-setup.sh
+COPY scripts/setup-sudo-schema.sh /usr/local/lib/setup-sudo-schema.sh
+RUN chmod +x /usr/local/lib/samba-setup.sh /usr/local/lib/setup-sudo-schema.sh
 
 # Image-specific files
 COPY samba-ad-dc/entrypoint.sh /usr/local/bin/entrypoint.sh

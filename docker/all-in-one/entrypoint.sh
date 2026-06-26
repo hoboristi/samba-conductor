@@ -63,6 +63,11 @@ rm -f "${CONF_DIR}"/*.conf
 # Samba always runs
 cp "${TEMPLATES_DIR}/samba.conf" "${CONF_DIR}/"
 
+# sudoRole schema setup always runs too — it's a one-shot job (autorestart=false)
+# that waits for samba to come up on its own, then loads the sudoRole schema
+# and creates ou=sudoers. See docker/scripts/setup-sudo-schema.sh.
+cp "${TEMPLATES_DIR}/sudo-schema.conf" "${CONF_DIR}/"
+
 if [ "${ENABLE_MONGODB}" = true ]; then
   cp "${TEMPLATES_DIR}/mongodb.conf" "${CONF_DIR}/"
 fi
