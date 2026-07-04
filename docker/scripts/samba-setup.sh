@@ -11,13 +11,6 @@
 #   SAMBA_JOIN_AS_DC=true     — join an existing domain as replica DC
 #   SAMBA_PRIMARY_DC=hostname — primary DC to replicate from
 #   SAMBA_SITE=site_name      — AD site name (optional)
-#
-# Note: sudoRole schema setup is NOT done here. It requires the samba daemon
-# to be live and listening on LDAP, which is not yet true at the point this
-# script runs (entrypoint.sh calls setup_samba() *before* supervisord starts
-# the samba process). It instead runs as its own one-shot supervisor program —
-# see docker/scripts/setup-sudo-schema.sh — which polls for samba to come up
-# before doing any schema work.
 # =============================================================================
 
 SAMBA_DATA="${DATA_DIR}/samba"
@@ -26,6 +19,9 @@ SAMBA_LOGS="${DATA_DIR}/logs/samba"
 TLS_DIR="${SAMBA_DATA}/private/tls"
 SAMBA_PROVISIONED="${SAMBA_DATA}/.provisioned"
 SAMBA_JOINED="${SAMBA_DATA}/.joined"
+
+# Source the schema setup function (offline ldbmodify approach)
+source /usr/local/lib/setup-sudo-schema.sh
 
 # -----------------------------------------------------------------------------
 # Create directory structure and symlink standard paths to /data
@@ -103,11 +99,9 @@ join_samba_domain() {
     echo "  Realm:      ${SAMBA_REALM}"
     echo "  Primary DC: ${SAMBA_PRIMARY_DC}"
 
-    # Resolve primary DC IP for DNS config
     local primary_ip
     primary_ip=$(getent hosts "${SAMBA_PRIMARY_DC}" 2>/dev/null | awk '{print $1}')
     if [ -z "$primary_ip" ]; then
-        # Try resolving via DNS if getent fails
         primary_ip=$(dig +short "${SAMBA_PRIMARY_DC}" 2>/dev/null | head -1)
     fi
     if [ -z "$primary_ip" ]; then
@@ -116,13 +110,10 @@ join_samba_domain() {
     fi
 
     echo "  Primary IP: ${primary_ip}"
-
-    # Point DNS to the primary DC
     echo "nameserver ${primary_ip}" > /etc/resolv.conf
 
     rm -rf /var/lib/samba/*
 
-    # Create smb.conf before join (needs sysvol/netlogon shares)
     mkdir -p /etc/samba /var/lib/samba/sysvol
     cat > /etc/samba/smb.conf <<EOF
 [global]
@@ -144,7 +135,6 @@ join_samba_domain() {
 EOF
     mkdir -p "/var/lib/samba/sysvol/${realm_lower}/scripts"
 
-    # Generate Kerberos config before join
     cat > /etc/krb5.conf <<EOF
 [libdefaults]
     default_realm = ${SAMBA_REALM}
@@ -249,7 +239,6 @@ setup_tls() {
         echo "[Samba] TLS certificate generated for ${fqdn}."
     fi
 
-    # Configure smb.conf for TLS
     if ! grep -q "tls certfile" /etc/samba/smb.conf 2>/dev/null; then
         sed -i "/^\[global\]/a \\
 \\ttls enabled  = yes\\n\\
@@ -274,4 +263,8 @@ setup_samba() {
 
     setup_kerberos
     setup_tls
+
+    # Schema extension: runs offline against sam.ldb before supervisord
+    # starts the samba daemon — the only safe window for schema updates.
+    setup_sudo_schema
 }

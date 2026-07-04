@@ -19,9 +19,6 @@ CONF_DIR="/etc/supervisor/conf.d"
 # =============================================================================
 # Determine which services to start
 # =============================================================================
-# ROOT_URL set     → start webapp
-# MONGO_URL set    → use external MongoDB (skip internal)
-# MONGO_URL unset  → start internal MongoDB if webapp is enabled
 ENABLE_WEBAPP=false
 ENABLE_MONGODB=false
 
@@ -50,7 +47,9 @@ if [ "${ENABLE_WEBAPP}" = true ]; then
 fi
 
 # =============================================================================
-# Run shared Samba setup (provision, kerberos, TLS)
+# Run shared Samba setup (provision, kerberos, TLS, schema)
+# setup_sudo_schema() runs here, offline via ldbmodify, before supervisord
+# starts samba — the only correct window for Samba AD schema updates.
 # =============================================================================
 source /usr/local/lib/samba-setup.sh
 setup_samba
@@ -60,13 +59,7 @@ setup_samba
 # =============================================================================
 rm -f "${CONF_DIR}"/*.conf
 
-# Samba always runs
 cp "${TEMPLATES_DIR}/samba.conf" "${CONF_DIR}/"
-
-# sudoRole schema setup always runs too — it's a one-shot job (autorestart=false)
-# that waits for samba to come up on its own, then loads the sudoRole schema
-# and creates ou=sudoers. See docker/scripts/setup-sudo-schema.sh.
-cp "${TEMPLATES_DIR}/sudo-schema.conf" "${CONF_DIR}/"
 
 if [ "${ENABLE_MONGODB}" = true ]; then
   cp "${TEMPLATES_DIR}/mongodb.conf" "${CONF_DIR}/"
@@ -75,7 +68,6 @@ fi
 if [ "${ENABLE_WEBAPP}" = true ]; then
   cp "${TEMPLATES_DIR}/webapp.conf" "${CONF_DIR}/"
 
-  # Generate environment file for the web app
   if [ -z "${METEOR_SETTINGS}" ]; then
     SAMBA_REALM_LOWER=$(echo "${SAMBA_REALM}" | tr '[:upper:]' '[:lower:]')
     BASE_DN="DC=$(echo "${SAMBA_REALM_LOWER}" | sed 's/\./,DC=/g')"
