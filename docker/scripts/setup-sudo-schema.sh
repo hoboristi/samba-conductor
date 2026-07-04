@@ -2,30 +2,19 @@
 # =============================================================================
 # Load the sudoRole schema extension and create ou=sudoers.
 #
-# IMPORTANT — Samba AD schema changes work differently from a normal
-# operation: they are NOT applied over LDAP against a running server.
-# Per Samba's own documentation and confirmed by many real-world reports
-# (searching for "schema_data_add: updates are not allowed: reject request"
-# turns up this exact failure), schema updates must be applied directly to
-# the local sam.ldb file using `ldbmodify`, and the samba daemon must be
-# STOPPED while this happens. Attempting it via `samba-tool` against a live
-# LDAP connection — which is what an earlier version of this script did —
-# fails immediately, every time, regardless of timing or retries.
-#
-# Because of this, this script is sourced from samba-setup.sh and runs
-# during entrypoint.sh, BEFORE supervisord starts the samba daemon — i.e.
-# exactly the opposite timing of what you'd expect for an LDAP operation,
-# but the correct timing for a local database file operation.
-#
-# Idempotent via the .sudo-schema-loaded marker file.
+# Schema updates must be applied directly to the local sam.ldb file using
+# ldbmodify with samba stopped. Two separate passes are required:
+#   Pass 1 — attribute definitions (sudoUser, sudoHost, etc.)
+#   Pass 2 — the sudoRole objectClass (references the attributes by
+#             lDAPDisplayName, so they must be committed first)
 # =============================================================================
-
-# Expects SAMBA_REALM, DATA_DIR, SAMBA_JOINED, SAMBA_LOGS to already be set
-# by the sourcing script (samba-setup.sh).
 
 setup_sudo_schema() {
     local sam_ldb="/var/lib/samba/private/sam.ldb"
     local sudo_schema_loaded="${SAMBA_DATA}/.sudo-schema-loaded"
+    local log_file="${SAMBA_LOGS}/sudo-schema-setup.log"
+
+    mkdir -p "$SAMBA_LOGS"
 
     if [ -f "$sudo_schema_loaded" ]; then
         echo "[Samba] sudoRole schema already loaded."
@@ -38,7 +27,7 @@ setup_sudo_schema() {
     fi
 
     if [ ! -f "$sam_ldb" ]; then
-        echo "[Samba] WARNING: ${sam_ldb} not found — domain not yet provisioned? Skipping schema setup for this run."
+        echo "[Samba] WARNING: ${sam_ldb} not found — domain not yet provisioned? Skipping."
         return
     fi
 
@@ -49,10 +38,13 @@ setup_sudo_schema() {
 
     echo "[Samba] Loading sudoRole schema into ${domain_base} (offline, via ldbmodify)..."
 
-    local schema_ldif
-    schema_ldif=$(mktemp /tmp/sudo-schema-XXXXXX.ldif)
+    # ------------------------------------------------------------------
+    # Pass 1: attribute definitions only
+    # ------------------------------------------------------------------
+    local attrs_ldif
+    attrs_ldif=$(mktemp /tmp/sudo-attrs-XXXXXX.ldif)
 
-    cat > "$schema_ldif" <<EOF
+    cat > "$attrs_ldif" <<EOF
 dn: CN=sudoUser,CN=Schema,CN=Configuration,${domain_base}
 changetype: add
 objectClass: top
@@ -130,7 +122,36 @@ adminDisplayName: sudoRunAsGroup
 adminDescription: Group(s) impersonated by sudo
 oMSyntax: 22
 searchFlags: 0
+EOF
 
+    echo "[Samba] Pass 1: loading attribute definitions..." | tee -a "$log_file"
+    if ldbmodify -H "$sam_ldb" "$attrs_ldif" \
+        --option="dsdb:schema update allowed"=true \
+        >> "$log_file" 2>&1; then
+        echo "[Samba] Pass 1: attributes loaded successfully."
+    else
+        local rc=$?
+        echo "[Samba] WARNING: Pass 1 ldbmodify exited ${rc} — may be harmless if attributes already exist." | tee -a "$log_file"
+    fi
+    rm -f "$attrs_ldif"
+
+    # Verify at least one attribute landed before continuing to Pass 2
+    if ! ldbsearch -H "$sam_ldb" \
+        -b "CN=sudoUser,CN=Schema,CN=Configuration,${domain_base}" \
+        -s base "(objectClass=*)" cn >> "$log_file" 2>&1; then
+        echo "[Samba] ERROR: sudoUser attribute not found after Pass 1. Aborting — will retry on next restart." | tee -a "$log_file"
+        return
+    fi
+    echo "[Samba] Pass 1 verified: sudoUser attribute present."
+
+    # ------------------------------------------------------------------
+    # Pass 2: objectClass definition — now that the attributes are known
+    # to the schema, mayContain references will resolve correctly
+    # ------------------------------------------------------------------
+    local class_ldif
+    class_ldif=$(mktemp /tmp/sudo-class-XXXXXX.ldif)
+
+    cat > "$class_ldif" <<EOF
 dn: CN=sudoRole,CN=Schema,CN=Configuration,${domain_base}
 changetype: add
 objectClass: top
@@ -156,40 +177,29 @@ mayContain: sudoUser
 mustContain: cn
 EOF
 
-    mkdir -p "$SAMBA_LOGS"
-    local log_file="${SAMBA_LOGS}/sudo-schema-setup.log"
-
-    # ldbmodify against the LOCAL ldb file. No daemon involved, no network,
-    # no LDAP connection — this is a direct, offline database file edit,
-    # which is why it must happen here (before supervisord starts samba)
-    # rather than after.
-    if ldbmodify -H "$sam_ldb" "$schema_ldif" \
+    echo "[Samba] Pass 2: loading sudoRole objectClass..." | tee -a "$log_file"
+    if ldbmodify -H "$sam_ldb" "$class_ldif" \
         --option="dsdb:schema update allowed"=true \
         >> "$log_file" 2>&1; then
-        echo "[Samba] sudoRole schema attributes/class loaded successfully."
+        echo "[Samba] Pass 2: sudoRole class loaded successfully."
     else
-        local import_exit=$?
-        echo "[Samba] WARNING: ldbmodify exited with status ${import_exit}. Checking ${log_file} for details."
-        echo "[Samba]          This can be harmless if the schema was already partially present."
+        local rc=$?
+        echo "[Samba] WARNING: Pass 2 ldbmodify exited ${rc} — may be harmless if class already exists." | tee -a "$log_file"
     fi
-    rm -f "$schema_ldif"
+    rm -f "$class_ldif"
 
-    # Verify the attribute actually landed before declaring success. This
-    # check also uses the local ldb file directly (no daemon required).
+    # Verify the class landed
     if ! ldbsearch -H "$sam_ldb" \
-        -b "CN=sudoUser,CN=Schema,CN=Configuration,${domain_base}" \
+        -b "CN=sudoRole,CN=Schema,CN=Configuration,${domain_base}" \
         -s base "(objectClass=*)" cn >> "$log_file" 2>&1; then
-        echo "[Samba] ERROR: sudoUser attribute not found in schema after import. Schema setup FAILED."
-        echo "[Samba]        See ${log_file} for details. Will retry on next container restart."
+        echo "[Samba] ERROR: sudoRole class not found after Pass 2. Aborting — will retry on next restart." | tee -a "$log_file"
         return
     fi
-    echo "[Samba] Verified: sudoUser attribute present in schema."
+    echo "[Samba] Pass 2 verified: sudoRole class present."
 
-    # Create the ou=sudoers container. This one CAN go over normal LDAP
-    # once samba is running later — but since we're already doing local
-    # ldb operations and don't want a second code path waiting on the
-    # daemon, do it the same way here for consistency. ou=sudoers is a
-    # regular object, not a schema object, so this is uncontroversial.
+    # ------------------------------------------------------------------
+    # Create ou=sudoers container (regular object, fine via ldb directly)
+    # ------------------------------------------------------------------
     local ou_ldif
     ou_ldif=$(mktemp /tmp/sudo-ou-XXXXXX.ldif)
     cat > "$ou_ldif" <<EOF
@@ -203,10 +213,10 @@ EOF
     if ldbadd -H "$sam_ldb" "$ou_ldif" >> "$log_file" 2>&1; then
         echo "[Samba] ou=sudoers container created."
     else
-        echo "[Samba] Note: ou=sudoers create step reported non-zero exit (likely already exists) — continuing."
+        echo "[Samba] Note: ou=sudoers already exists — continuing."
     fi
     rm -f "$ou_ldif"
 
     touch "$sudo_schema_loaded"
-    echo "[Samba] sudoRole schema setup complete. Marker written: ${sudo_schema_loaded}"
+    echo "[Samba] sudoRole schema setup complete. Marker written: ${sudo_schema_loaded}" | tee -a "$log_file"
 }
