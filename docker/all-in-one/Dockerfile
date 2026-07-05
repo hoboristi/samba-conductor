@@ -22,7 +22,7 @@ RUN meteor npm i --no-audit --legacy-peer-deps && \
 
 # Samba 4 Active Directory Domain Controller (standalone)
 # Based on Fedora minimal for smallest possible image
-FROM registry.fedoraproject.org/fedora-minimal:42
+FROM registry.fedoraproject.org/fedora-minimal:44
 
 LABEL maintainer="samba-conductor"
 LABEL description="Samba 4 AD DC on Fedora minimal"
